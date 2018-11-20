@@ -25,6 +25,8 @@ object PredictorSample {
     val img2 = ImageClassifier.reshapeImage(img, 224, 224)
 
     val imgND = ImageClassifier.bufferedImageToPixels(img2, Shape(1, 3, 224, 224))
+
+    val imgND = NDArray.api.random_uniform(Some(-1.0f), Some(1.0f), Some(Shape(1, 3, 224, 224)))
     // val imgGPU = imgND.copyTo(context(0))
 
     if (batchSize == 1) {
