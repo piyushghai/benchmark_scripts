@@ -9,57 +9,58 @@ import org.apache.mxnet.infer.{ImageClassifier, Predictor}
 object PredictorSample {
 
   def main(args: Array[String]): Unit = {
+    val batchSize = 16
     val modelPathPrefix = "/incubator-mxnet/scala-package/examples/scripts/infer/models/resnet-152/resnet-152"
     val inputImagePath = "/incubator-mxnet/scala-package/examples/scripts/infer/images/dog.jpg"
-    val numberOfRuns = 100
-    val context = Array(Context.cpu())
+    val numberOfRuns = 1000
+    val context = Array(Context.gpu(0))
 
-    val inputDesc = new DataDesc("data", Shape(1, 3, 224, 224), DType.Float32, Layout.NCHW)
+    val inputDesc = new DataDesc("data", Shape(batchSize, 3, 224, 224), DType.Float32, Layout.NCHW)
 
     val predictor = new Predictor(modelPathPrefix, IndexedSeq(inputDesc), context)
 
-    val ndarry = NDArray.ones(Shape(1, 3, 224, 224))
 
     val img = ImageIO.read(new File(inputImagePath))
 
     val img2 = ImageClassifier.reshapeImage(img, 224, 224)
 
     val imgND = ImageClassifier.bufferedImageToPixels(img2, Shape(1, 3, 224, 224))
+    val imgGPU = imgND.copyTo(context(0))
 
-    var inferenceTimes: List[Long] = List()
-    for (i <- 1 to numberOfRuns) {
-      val startTimeSingle = System.nanoTime()
-      val output = predictor.predictWithNDArray(IndexedSeq(imgND))
-   // NDArray.waitall()
-      val buf = output(0).shape
-      val estimatedTimeSingle = System.nanoTime() - startTimeSingle
-      inferenceTimes = estimatedTimeSingle :: inferenceTimes
-    println("Inference time at iteration: %d is : %d \n".format(i, estimatedTimeSingle))
-   printResults(output(0).toArray, "/incubator-mxnet/scala-package/examples/scripts/infer/models/resnet-152") 
-   }
-
-    printStatistics(inferenceTimes, "single_inference") 
-
- /*val listND = List.fill(16)(imgND)
-
-    val op = NDArray.concatenate(listND)
-
-    var inferenceTimes2: List[Long] = List()
-
-    for (i <- 1 to numberOfRuns) {
-
-      val startTimeSingle = System.nanoTime()
-      val output = predictor.predictWithNDArray(IndexedSeq(op))
-      NDArray.waitall()
-      val estimatedTimeSingle = System.nanoTime() - startTimeSingle
-
-      inferenceTimes2 = estimatedTimeSingle :: inferenceTimes2
-      println("Batch Inference time at iteration: %d is : %d \n".format(i, estimatedTimeSingle))
-      //printResults(output(0).toArray, "/incubator-mxnet/scala-package/examples/scripts/infer/models/resnet-152") 
+    if (batchSize == 1) {
+      var inferenceTimes: List[Long] = List()
+      for (i <- 1 to numberOfRuns) {
+          val startTimeSingle = System.nanoTime()
+          val output = predictor.predictWithNDArray(IndexedSeq(imgGPU))
+          output(0).waitToRead()
+    val estimatedTimeSingle = System.nanoTime() - startTimeSingle
+          inferenceTimes = estimatedTimeSingle :: inferenceTimes
+          println("Inference time at iteration: %d is : %d \n".format(i, estimatedTimeSingle))
     }
 
-    printStatistics(inferenceTimes2, "batch_inference")
-*/
+      printStatistics(inferenceTimes, "single_inference") 
+    }
+    else {
+      val listND = List.fill(batchSize)(imgGPU)
+
+  val op = NDArray.concatenate(listND)
+  op.waitToRead()
+
+      var inferenceTimes2: List[Long] = List()
+      val op2 = IndexedSeq(op)
+
+      for (i <- 1 to numberOfRuns) {
+
+          val startTimeSingle = System.nanoTime()
+          val output = predictor.predictWithNDArray(op2)
+          output(0).waitToRead()
+          val estimatedTimeSingle = System.nanoTime() - startTimeSingle
+    inferenceTimes2 = estimatedTimeSingle :: inferenceTimes2
+          println("Inference time at iteration: %d is : %d \n".format(i, estimatedTimeSingle))
+      }
+
+      printStatistics(inferenceTimes2, "batch_inference")
+    }
     System.exit(0)
 
   }
