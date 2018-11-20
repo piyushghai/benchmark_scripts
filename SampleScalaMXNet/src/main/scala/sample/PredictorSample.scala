@@ -9,7 +9,7 @@ import org.apache.mxnet.infer.{ImageClassifier, Predictor}
 object PredictorSample {
 
   def main(args: Array[String]): Unit = {
-    val batchSize = 16
+    val batchSize = 1
     val modelPathPrefix = "/incubator-mxnet/scala-package/examples/scripts/infer/models/resnet-152/resnet-152"
     val inputImagePath = "/incubator-mxnet/scala-package/examples/scripts/infer/images/dog.jpg"
     val numberOfRuns = 1000
@@ -25,14 +25,16 @@ object PredictorSample {
     val img2 = ImageClassifier.reshapeImage(img, 224, 224)
 
     val imgND = ImageClassifier.bufferedImageToPixels(img2, Shape(1, 3, 224, 224))
-    val imgGPU = imgND.copyTo(context(0))
+    // val imgGPU = imgND.copyTo(context(0))
 
     if (batchSize == 1) {
       var inferenceTimes: List[Long] = List()
       for (i <- 1 to numberOfRuns) {
           val startTimeSingle = System.nanoTime()
+                val imgGPU = imgND.copyTo(context(0))
           val output = predictor.predictWithNDArray(IndexedSeq(imgGPU))
           output(0).waitToRead()
+                // NDArray.waitall()
     val estimatedTimeSingle = System.nanoTime() - startTimeSingle
           inferenceTimes = estimatedTimeSingle :: inferenceTimes
           println("Inference time at iteration: %d is : %d \n".format(i, estimatedTimeSingle))
@@ -41,6 +43,7 @@ object PredictorSample {
       printStatistics(inferenceTimes, "single_inference") 
     }
     else {
+        val imgGPU = imgND.copyTo(context(0))
       val listND = List.fill(batchSize)(imgGPU)
 
   val op = NDArray.concatenate(listND)
