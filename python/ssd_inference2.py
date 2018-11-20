@@ -3,11 +3,16 @@ from mxnet import ndarray as nd
 import numpy as np
 from collections import namedtuple
 import math
-Batch = namedtuple('Batch', ['data'])
+import time
 
 ctx = mx.gpu(0)
 use_batch=False
 num_runs=1000
+
+batch_size = 1
+
+if use_batch:
+    batch_size=16
 
 
 sym, arg_params, aux_params = mx.model.load_checkpoint('/incubator-mxnet/scala-package/examples/scripts/infer/models/resnet-152/resnet-152', 0)
@@ -19,10 +24,6 @@ else:
     mod.bind(for_training=False, data_shapes=[('data', (1,3,224,224))],
              label_shapes=mod._label_shapes)
 mod.set_params(arg_params, aux_params, allow_missing=True)
-
-with open('/incubator-mxnet/scala-package/examples/scripts/infer/models/resnet-152/synset.txt', 'r') as f:
-    labels = [l.rstrip() for l in f]
-
 
 
 def pre_process_image(path):
@@ -40,43 +41,26 @@ def pre_process_image(path):
                         a = nd.concat(a, img, dim = 0)
         return a.as_in_context(ctx)
 
-def predict(img):
+def get_synthetic_data():
+    data = nd.random.uniform(-1, 1, shape=(batch_size, 3, 224, 224))
+    return data
+
+def predict():
     # compute the predict probabilities
-    import time
+    
     # print img.shape
-    data_iter = None
-    if use_batch:
-        data_iter = mx.io.NDArrayIter([img], None, 16)
-    else:
-        data_iter = mx.io.NDArrayIter([img], None, 1)
+    data = get_synthetic_data()
 
     start = time.time()
+    data.as_in_context(ctx)
+    data_iter = mx.io.NDArrayIter([img], None, batch_size)
 
     op = mod.predict(data_iter)
-    #mod.forward(Batch([img]))
     op.wait_to_read()
-#    print (type(op[0]))
     end = time.time()
 
- #   prob = op[0]
-#    print (op[0])
-    #op[0].copyto(prob)
-
-    #prob = prob.asnumpy()
-    # print (mod.get_outputs()[0].shape)
-    # print len(mod.get_outputs())
-    #prob = mod.get_outputs()[0]
-    #shape = mod.get_outputs()[0].shape
     print (end - start)
     
-    #prob = np.squeeze(prob)
-    #a = np.argsort(prob)[::-1]
-    #for i in a[0:5]:
-     #   print('probability=%f, class=%s' %(prob[i], labels[i]))
-    # print the top-5
-#    prob = np.squeeze(prob)
- #   a = np.argsort(prob)[::-1]
-    # print (len(prob))
     return end - start
 
 
@@ -85,9 +69,9 @@ def percentile(val, arr):
         return arr[idx]
 
 times = list()
-img = pre_process_image('/incubator-mxnet/scala-package/examples/scripts/infer/images/dog.jpg')
+
 for i in range(1, num_runs):
-        times.append(predict(img))
+        times.append(predict())
 
 times.sort()
 # print times
