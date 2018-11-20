@@ -5,16 +5,21 @@ from collections import namedtuple
 import math
 Batch = namedtuple('Batch', ['data'])
 
-ctx = mx.gpu()
-use_batch=True
+ctx = mx.gpu(0)
+use_batch=False
 num_runs=1000
 
 
 sym, arg_params, aux_params = mx.model.load_checkpoint('/incubator-mxnet/scala-package/examples/scripts/infer/models/resnet-152/resnet-152', 0)
 mod = mx.mod.Module(symbol=sym, context=ctx, label_names=None)
-mod.bind(for_training=False, data_shapes=[('data', (16,3,224,224))],
-         label_shapes=mod._label_shapes)
+if use_batch:
+    mod.bind(for_training=False, data_shapes=[('data', (16,3,224,224))],
+             label_shapes=mod._label_shapes)
+else:
+    mod.bind(for_training=False, data_shapes=[('data', (1,3,224,224))],
+             label_shapes=mod._label_shapes)
 mod.set_params(arg_params, aux_params, allow_missing=True)
+
 with open('/incubator-mxnet/scala-package/examples/scripts/infer/models/resnet-152/synset.txt', 'r') as f:
     labels = [l.rstrip() for l in f]
 
@@ -33,19 +38,23 @@ def pre_process_image(path):
         if use_batch:
                 for i in range(1, 16):
                         a = nd.concat(a, img, dim = 0)
-        return a
+        return a.as_in_context(ctx)
 
-def predict():
-    img = pre_process_image('/incubator-mxnet/scala-package/examples/scripts/infer/images/dog.jpg')
+def predict(img):
     # compute the predict probabilities
     import time
     # print img.shape
-    data_iter = mx.io.NDArrayIter([img], None, 16)
+    data_iter = None
+    if use_batch:
+        data_iter = mx.io.NDArrayIter([img], None, 16)
+    else:
+        data_iter = mx.io.NDArrayIter([img], None, 1)
+
     start = time.time()
 
     op = mod.predict(data_iter)
     #mod.forward(Batch([img]))
-    nd.waitall()
+    op.wait_to_read()
 #    print (type(op[0]))
     end = time.time()
 
@@ -76,8 +85,9 @@ def percentile(val, arr):
         return arr[idx]
 
 times = list()
+img = pre_process_image('/incubator-mxnet/scala-package/examples/scripts/infer/images/dog.jpg')
 for i in range(1, num_runs):
-        times.append(predict())
+        times.append(predict(img))
 
 times.sort()
 # print times
