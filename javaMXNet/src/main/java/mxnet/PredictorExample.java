@@ -19,15 +19,15 @@ public class PredictorExample {
 
     public static void main(String[] args) throws IOException {
 
-        String modelPathPrefix = "/incubator-mxnet/scala-package/examples/scripts/infer/models/resnet-152/resnet-152";
+        String modelPathPrefix = "/tmp/resnet152/resnet-152";
 
-        String inputImagePath = "/incubator-mxnet/scala-package/examples/scripts/infer/images/dog.jpg";
+        String inputImagePath = "/tmp/resnet152/dog.jpg";
 
-        String imageFolderPath = "/incubator-mxnet/scala-package/examples/scripts/infer/images/";
+        boolean useBatch = false;
 
-        int batchSize = 16;
+        int batchSize = 1;
 
-        int numberOfRuns = 50;
+        int numberOfRuns = 1000;
 
         java.util.List<Context> context = getContext();
 
@@ -40,51 +40,60 @@ public class PredictorExample {
 
         img = reshapeImage(img, 224, 224);
 	
-        NDArray arr = new NDArray(imagePreprocess(img), new Shape(new int[] {1, 3, 224, 224}), Context.cpu());
-        List<NDArray> l = new ArrayList<>();
-        l.add(arr);
+        NDArray arr = new NDArray(imagePreprocess(img), new Shape(new int[] {1, 3, 224, 224}), new Context("gpu", 0));
+
+        NDArray gpuArray = arr.copyTo(context.get(0));
 
         Predictor predictor = new Predictor(modelPathPrefix, inputDescriptors, context,0);
 
 
-        /*long[] times = new long[numberOfRuns];
+        if (!useBatch) {
+            List<NDArray> l = new ArrayList<>();
+            l.add(gpuArray);
 
-        for (int i = 0; i < numberOfRuns; i++) {
-            long currTime = System.nanoTime();
-	   List<NDArray> res =  predictor.predictWithNDArray(l);
-	   NDArray.waitall();
-           //res.get(0); 
-	   times[i] = System.nanoTime() - currTime;
+            long[] times = new long[numberOfRuns];
 
-            System.out.println("Inference time at iteration: " + i + " is : " + (times[i]/1.0e6) + "\n");
-	System.out.println(printMaximumClass(res.get(0).toArray(), modelPathPrefix));
+            for (int i = 0; i < numberOfRuns; i++) {
+                long currTime = System.nanoTime();
+                List<NDArray> res = predictor.predictWithNDArray(l);
+                res.get(0).waitToRead();
+                //res.get(0);
+                times[i] = System.nanoTime() - currTime;
+
+                System.out.println("Inference time at iteration: " + i + " is : " + (times[i] / 1.0e6) + "\n");
+                System.out.println(printMaximumClass(res.get(0).toArray(), modelPathPrefix));
+            }
+
+            printStatistics(times, "single_inference");
         }
 
-        printStatistics(times,"single_inference");
-*/
-         NDArray[] array = new NDArray[16];
+        else {
 
-        for (int i = 0;i<16;i++) {
-            array[i] = arr;
+            NDArray[] array = new NDArray[batchSize];
+
+            for (int i = 0; i < batchSize; i++) {
+                array[i] = gpuArray;
+            }
+
+            NDArray[] arr2 = NDArray.concat(array, array.length, 0, null);
+
+            List<NDArray> l2 = new ArrayList<>();
+            l2.add(arr2[0]);
+
+            arr2[0].waitToRead();
+
+            long[] times2 = new long[numberOfRuns];
+
+            for (int i = 0; i < numberOfRuns; i++) {
+                long currTime = System.nanoTime();
+                List<NDArray> res = predictor.predictWithNDArray(l2);
+                res.get(0).waitToRead();
+                times2[i] = System.nanoTime() - currTime;
+                System.out.println("Inference time at iteration: " + i + " is : " + (times2[i] / 1.0e6) + "\n");
+            }
+
+            printStatistics(times2, "batch_inference");
         }
-
-
-        NDArray[] arr2 = NDArray.concat(array, array.length, 0, null);
-
-        List<NDArray> l2 = new ArrayList<>();
-        l2.add(arr2[0]);
-
-        long[] times2 = new long[numberOfRuns];
-
-        for (int i = 0; i < numberOfRuns; i++) {
-            long currTime = System.nanoTime();
-            predictor.predictWithNDArray(l2);
-	    NDArray.waitall();
-            times2[i] = System.nanoTime() - currTime;
-            System.out.println("Inference time at iteration: " + i + " is : " + (times2[i]/1.0e6) + "\n");
-        }
-
-        printStatistics(times2,"batch_inference");
 
         return;
 
@@ -139,7 +148,7 @@ public class PredictorExample {
 
     private static java.util.List<Context> getContext() {
         java.util.List<Context> ctx = new ArrayList<>();
-        ctx.add(Context.cpu());
+        ctx.add(new Context("gpu", 0));
 
         return ctx;
     }
